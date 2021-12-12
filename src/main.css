@@ -1,0 +1,22 @@
+/*
+* Copyright © 2020. TIBCO Software Inc.
+* This file is subject to the license terms contained
+* in the license file that is distributed with this file.
+*/
+
+html, body, #mod-container1 {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+}
+
+#mod-container1{
+    white-space: pre;
+}
+svg text {
+    cursor: default;
+}
+
+.editable svg text {
+    cursor: pointer;
+}
