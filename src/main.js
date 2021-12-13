@@ -14,16 +14,16 @@ Spotfire.initialize(async (mod) => {
     /**
      * Create the read function.
      */
-    const reader = mod.createReader(mod.visualization.data(), mod.visualization.mainTable(), mod.windowSize(), 
-        mod.property("myProperty"),
-        mod.property("orientation"),
-        mod.property("line")
-        );
+    const reader = mod.createReader(mod.visualization.data(), mod.visualization.mainTable(), mod.windowSize(),
+        mod.property("line"),
+    );
 
     /**
      * Store the context.
      */
     const context = mod.getRenderContext();
+
+    document.body.classList.toggle("editable", context.isEditing);
 
     /**
      * Initiate the read loop
@@ -34,10 +34,8 @@ Spotfire.initialize(async (mod) => {
      * @param {Spotfire.DataView} dataView
      * @param {Spotfire.DataTable} dataTable
      * @param {Spotfire.Size} windowSize
-     * @param {Spotfire.ModProperty<string>} prop
      */
-    async function render(dataView, dataTable, windowSize, prop, orientation, line) {
-        console.log('prop:', prop)
+    async function render(dataView, dataTable, windowSize, line) {
         /**
          * Check the data view for errors
          */
@@ -50,6 +48,10 @@ Spotfire.initialize(async (mod) => {
             return;
         }
         mod.controls.errorOverlay.hide();
+
+        let chartDom = document.getElementById('mod-container1');
+        let myChart = echarts.init(chartDom);
+        myChart.clear()
 
         /**
          * Get the hierarchy of the categorical X-axis.
@@ -73,40 +75,30 @@ Spotfire.initialize(async (mod) => {
         const colorDomain = colorHierarchy.isEmpty ? ["All Values"] :
             colorLeafNodes.map((node) => node.formattedPath());
 
-            console.log('colorHierarchy:', colorHierarchy)
-            console.log('colorLeafNodes:', colorLeafNodes)
-            console.log('colorDomain:', colorDomain)
-
-        
+        // console.log('colorHierarchy:', colorHierarchy)
+        // console.log('colorLeafNodes:', colorLeafNodes)
+        // console.log('colorDomain:', colorDomain)
 
         const xLeafNodes = xRoot.leaves();
         const rows = await dataView.allRows()
         const axes = await dataView.axes()
-        const arr = rows.map(item => {
-            return item.continuous('Y').value()
-        })
-
         let data = []
         let xData = []
 
-        // let rowColors = {}
-
+        /**
+         * rowColors: get spotfire set colors
+         */
         let rowColors = xLeafNodes.map((leaf) => {
             var valueAndColorPairs = []
             leaf.rows().forEach((r) => {
                 let colorIndex = !colorHierarchy.isEmpty ? r.categorical("Color").leafIndex : 0;
                 valueAndColorPairs[colorIndex] = r.color().hexCode;
-                // if(!rowColors[leaf.formattedPath()]){
-                //     rowColors[leaf.formattedPath()] = {}
-                //     rowColors[leaf.formattedPath()].color = r.color().hexCode;
-                // }
             });
             var row = [leaf.formattedPath(), ...valueAndColorPairs.flat()];
             return row;
         });
 
-        console.log('dataRows:', rowColors)
-
+        // obj: x Category
         let obj = {}
 
         rows.forEach(row => {
@@ -119,12 +111,21 @@ Spotfire.initialize(async (mod) => {
         });
 
         xData = xLeafNodes.map(item => {
-            return item.key
+            return generateXData([], item).join(' » ')
         })
+
+        function generateXData(arr, item) {
+            if (item.parent && item.parent.key) {
+                generateXData(arr, item.parent)
+            }
+            arr.push(item.key)
+            return arr
+        }
 
         data.forEach(item => {
             if (!obj[item[0]]) {
                 obj[item[0]] = []
+                obj[item[0]].push(item[item.length - 1])
             } else {
                 obj[item[0]].push(item[item.length - 1])
             }
@@ -135,17 +136,11 @@ Spotfire.initialize(async (mod) => {
         xData.forEach(x => {
             res.push(obj[x])
         })
-        console.log(obj)
-        // console.log(res)
-        // console.log('data:', data)
 
-        const controls = mod.controls
-        const visualization = mod.visualization
-        
-        // console.log('visualization:', visualization)
-        // console.log('xLeafNodes:', xLeafNodes)
-        // console.log('rows:', rows)
-        // console.log('arr:', arr)
+        // console.log('xdata:', xData)
+        // console.log('data:', data)
+        // console.log('obj:', obj)
+        // console.log('res:', res)
 
         /**
          * draw echarts
@@ -157,20 +152,31 @@ Spotfire.initialize(async (mod) => {
             fontName: styling.scales.font.fontFamily,
             color: styling.scales.font.color
         };
-        let chartDom = document.getElementById('mod-container1');
-        let myChart = echarts.init(chartDom);
+
+        function sum(arr) {
+            return arr.reduce((prev, curr) => {
+                return prev + curr
+            }, 0)
+        }
+
         let chartData = echarts.dataTool.prepareBoxplotData(res)
-        let {boxData, outliers} = chartData
-        
+        let {
+            boxData,
+            outliers
+        } = chartData
+
         boxData = boxData.map((item, idx) => {
+            const avg = Number(sum(res[idx])) / res[idx].length
+            const newItem = item.concat([avg])
             return {
-                value: item,
+                value: newItem,
                 itemStyle: {
-                    color: rowColors[idx][1],
+                    color: "transparent",
                     borderColor: rowColors[idx][1]
                 }
             }
         })
+
         outliers = outliers.map((item, idx) => {
             return {
                 value: item,
@@ -180,7 +186,6 @@ Spotfire.initialize(async (mod) => {
             }
         })
 
-        console.log('outliers:', outliers)
         let option;
 
         option = {
@@ -191,23 +196,22 @@ Spotfire.initialize(async (mod) => {
                     type: 'shadow',
                 },
                 confine: true,
-                formatter: function(params){
-                    // console.log(params)
-
+                formatter: function (params) {
                     let value = params.value;
                     let str = '';
-                    if(params.seriesType === 'scatter'){
+                    if (params.seriesType === 'scatter') {
                         str = `
                             ${params.name}: <br/>
                             ${params.seriesName}: ${value[1].toFixed(4)}<br/>
                        `
-                    }else if(params.seriesType === 'boxplot'){
+                    } else if (params.seriesType === 'boxplot') {
                         let allCount = obj[params.name].length
                         let outArr = []
                         outliers.forEach(item => {
-                            if(item[0] === value[0] && item[1]){
+                            if (item[0] === value[0] && item[1]) {
                                 outArr.push(item[1])
-                            }})
+                            }
+                        })
                         let outlierCount = outArr.length
                         let count = allCount - outlierCount;
                         str = `
@@ -217,15 +221,16 @@ Spotfire.initialize(async (mod) => {
                             median: ${value[3].toFixed(4)}<br/>
                             Q3: ${value[4].toFixed(4)}<br/>
                             max: ${value[5].toFixed(4)}<br/>
+                            avg: ${value[6].toFixed(4)}<br/>
                             count: ${count}<br/>
                             outlierCount: ${outlierCount}<br/>
                             allCount: ${allCount}<br/>
                        `
-                    }else if(params.seriesType === 'line'){
+                    } else if (params.seriesType === 'line') {
                         str = `${params.seriesName}<br/>
-                                ${params.name}:  ${params.value[1]}`
+                                ${params.name}:  ${params.value.toFixed(4)}`
                     }
-                    
+
                     return str
                 },
                 backgroundColor: '#000',
@@ -268,15 +273,11 @@ Spotfire.initialize(async (mod) => {
                 splitLine: {
                     show: false,
                 }
-                
+
             },
             series: [{
                     name: 'boxplot',
                     type: 'boxplot',
-                    // selectedMode: true,
-                    // selectedStyle: {
-
-                    // },
                     data: boxData
                 },
                 {
@@ -287,103 +288,55 @@ Spotfire.initialize(async (mod) => {
             ]
         };
 
-        console.log('line:', line)
         formatLineObj(line.value())
 
         let colorStr = colorDomain.join(',')
         const textWidth = chartDom.clientWidth - 20
-        if(colorStr !== 'All Values' && colorStr !== xData.join(',')){
+        if (colorStr !== 'All Values' && colorStr !== xData.join(',')) {
             option = {
-                title: [
-                    {
-                        text: 'All of the color-by columns have to be selected on either the X-axis or used to trellis by.',
-                        left: 'center',
-                        top: 'center',
-                        textStyle: {
-                            width: textWidth,
-                            fontWeight: 'normal',
-                            overflow: 'break',
-                            ...textStyle
-                        }
+                title: [{
+                    text: 'All of the color-by columns have to be selected on either the X-axis or used to trellis by.',
+                    left: 'center',
+                    top: 'center',
+                    textStyle: {
+                        width: textWidth,
+                        fontWeight: 'normal',
+                        overflow: 'break',
+                        ...textStyle
                     }
-                ],
+                }],
                 series: []
             }
         }
 
-        myChart.clear()
-
         option && myChart.setOption(option);
 
         /**
-         * Popout change handler
-         * @param {Spotfire.PopoutComponentEvent} property
+         * format line chart
          */
-        function popoutChangeHandler({ name, value }) {
-            console.log(name, value)
-            // name == orientation.name && orientation.set(value);
-            name == line.name && line.set(value);
-        }
-
-        function formatLineObj(value){
-            let map = {}
-            let lineMinData = []
-            let lineMaxData = []
+        function formatLineObj(value) {
+            let lineData = []
+            const features = ['min', 'Q1', 'median', 'Q3', 'max', 'avg']
             const vArr = value.split('-')
-            const v = vArr[vArr.length -1]
-            if(v === 'none') return;
-            outliers.forEach(o => {
-                let item = o.value
-                if(!Array.isArray(map[item[0]])){
-                    map[item[0]] = []
-                }
-                map[item[0]].push(item[1])
+            const v = vArr[vArr.length - 1]
+            if (v === 'none') return;
+
+            const featureArr = boxData.map(item => {
+                return item.value
             })
-            for(let key in map){
-                let data = map[key]
-                let idx = data.indexOf(null)
-                if(idx > -1){
-                    data.splice(idx, 1)
-                }
 
-                if(v === 'min'){
-                    let min = null
-                    if(data && data.length){
-                        min = Math.min(...data)
-                    }
-                    lineMinData.push([Number(key), min])
-                }else if(v === 'max'){
-                    let max = null
-                    if(data && data.length){
-                        max = Math.max(...data)
-                    }
-                    lineMaxData.push([Number(key), max])
-                }else if(v === 'all'){
-                    let max = null
-                    let min = null
-                    if(data && data.length){
-                        max = Math.max(...data)
-                        min = Math.min(...data)
-                    }
-                    lineMaxData.push([Number(key), max])
-                    lineMinData.push([Number(key), min])
-                }
-            }
+            lineData = featureArr.map(item => {
+                return item[features.indexOf(v)]
+            })
 
-            let lineMinObj = {
+            let lineObj = {
                 type: 'line',
                 name: value,
-                data: lineMinData
-            } 
-            let lineMaxObj = {
-                type: 'line',
-                name: value,
-                data: lineMaxData
+                data: lineData
             }
 
-            option.series.push(lineMinObj)
-            option.series.push(lineMaxObj)
-            
+            option.series.push(lineObj)
+
         }
         /**
          * A helper function to compare a property against a certain value
@@ -394,17 +347,35 @@ Spotfire.initialize(async (mod) => {
          * Create a function to show a custom popout
          * Should be called when clicking on chart axes
          */
-        const { popout } = mod.controls;
-        const { section } = popout;
-        const { radioButton } = popout.components;
+        const {
+            popout
+        } = mod.controls;
+        const {
+            section
+        } = popout;
+        const {
+            radioButton,
+            checkbox
+        } = popout.components;
+
+        /**
+         * Popout change handler
+         * @param {Spotfire.PopoutComponentEvent} property
+         */
+        function popoutChangeHandler({
+            name,
+            value
+        }) {
+            // console.log(name, value)
+            name == line.name && line.set(value)
+        }
 
         function showPopout(e) {
             if (!context.isEditing) {
                 return;
             }
 
-            popout.show(
-                {
+            popout.show({
                     x: e.x,
                     y: e.y,
                     autoClose: true,
@@ -414,6 +385,7 @@ Spotfire.initialize(async (mod) => {
                 popoutContent
             );
         }
+
 
         /**
          * Create popout content
@@ -436,39 +408,57 @@ Spotfire.initialize(async (mod) => {
                     }),
                     radioButton({
                         name: line.name,
+                        text: "Line by Q1",
+                        value: "line-by-Q1",
+                        checked: is(line)("line-by-Q1")
+                    }),
+
+                    radioButton({
+                        name: line.name,
+                        text: "Line by median",
+                        value: "line-by-median",
+                        checked: is(line)("line-by-median")
+                    }),
+                    radioButton({
+                        name: line.name,
+                        text: "Line by Q3",
+                        value: "line-by-Q3",
+                        checked: is(line)("line-by-Q3")
+                    }),
+                    radioButton({
+                        name: line.name,
                         text: "Line by max",
                         value: "line-by-max",
                         checked: is(line)("line-by-max")
                     }),
                     radioButton({
                         name: line.name,
-                        text: "Line by min & max",
-                        value: "line-by-all",
-                        checked: is(line)("line-by-all")
-                    })
+                        text: "Line by avg",
+                        value: "line-by-avg",
+                        checked: is(line)("line-by-avg")
+                    }),
                 ]
             }),
+
         ];
 
-        myChart.on('contextmenu', function(e){
+        myChart.on('contextmenu', function (e) {
             showPopout(e.event.event)
         })
 
-        myChart.on('click', function(e){
-            console.log(e)
-            xLeafNodes[e.value[0]].rows().forEach(r => r.mark())
+        myChart.on('click', async function (e) {
+            const isExpired = await dataView.hasExpired()
+            if (isExpired) return;
+            xLeafNodes[e.value[0]].rows().forEach(r => {
+                r.mark()
+            })
         })
 
-        // /**
-        //  * Print out to document
-        //  */
-        // const container = document.querySelector("#mod-container");
-        // container.textContent = `windowSize: ${windowSize.width}x${windowSize.height}\r\n`;
-        // container.textContent += `should render: ${xRoot.rows().length} rows\r\n`;
-        // container.textContent += `${prop.name}: ${prop.value()}`;
-
-
-
+        myChart.getZr().on('click', function (e) {
+            if (!e.target) {
+                dataView.clearMarking();
+            }
+        })
 
 
         myChart.resize()
