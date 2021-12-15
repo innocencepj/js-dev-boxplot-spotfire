@@ -6,16 +6,6 @@
     "icon": "icon.svg",
     "properties": [
         {
-            "name": "myProperty",
-            "type": "string",
-            "defaultValue": "myValue"
-        },
-        {
-            "name": "orientation",
-            "type": "string",
-            "defaultValue": "vertical"
-        },
-        {
             "name": "line",
             "type": "string",
             "defaultValue": "none"
@@ -46,8 +36,63 @@
                     "expressionHeuristics": "none",
                     "priority": 1
                 }
+            },
+            {
+                "name": "Y1",
+                "mode": "continuous",
+                "placement": "left",
+                "allowMultipleMeasures": false,
+                "allowNonAggregatingMeasures": true,
+                "automaticConfiguration": {
+                    "expressionHeuristics": "none",
+                    "priority": 1
+                }
+            },
+            {
+                "name": "Y2",
+                "mode": "continuous",
+                "placement": "left",
+                "allowMultipleMeasures": false,
+                "allowNonAggregatingMeasures": true,
+                "automaticConfiguration": {
+                    "expressionHeuristics": "none",
+                    "priority": 1
+                }
+            },
+            {
+                "name": "Y3",
+                "mode": "continuous",
+                "placement": "left",
+                "allowMultipleMeasures": false,
+                "allowNonAggregatingMeasures": true,
+                "automaticConfiguration": {
+                    "expressionHeuristics": "none",
+                    "priority": 1
+                }
+            },
+            {
+                "name": "Y4",
+                "mode": "continuous",
+                "placement": "left",
+                "allowMultipleMeasures": false,
+                "allowNonAggregatingMeasures": true,
+                "automaticConfiguration": {
+                    "expressionHeuristics": "none",
+                    "priority": 1
+                }
+            },
+            {
+                "name": "Y5",
+                "mode": "continuous",
+                "placement": "left",
+                "allowMultipleMeasures": false,
+                "allowNonAggregatingMeasures": true,
+                "automaticConfiguration": {
+                    "expressionHeuristics": "none",
+                    "priority": 1
+                }
             }
-
+            
         ]
     },
     "files": [

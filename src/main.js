@@ -14,9 +14,14 @@ Spotfire.initialize(async (mod) => {
     /**
      * Create the read function.
      */
-    const reader = mod.createReader(mod.visualization.data(), mod.visualization.mainTable(), mod.windowSize(),
+    const reader = mod.createReader(
+        mod.visualization.data(), 
+        mod.visualization.mainTable(),
+        mod.windowSize(),
         mod.property("line"),
+        mod.visualization.axis("Y")
     );
+
 
     /**
      * Store the context.
@@ -35,7 +40,13 @@ Spotfire.initialize(async (mod) => {
      * @param {Spotfire.DataTable} dataTable
      * @param {Spotfire.Size} windowSize
      */
-    async function render(dataView, dataTable, windowSize, line) {
+    async function render(
+        dataView,
+        dataTable,
+        windowSize, 
+        line,
+        Y
+    ) {
         /**
          * Check the data view for errors
          */
@@ -84,7 +95,6 @@ Spotfire.initialize(async (mod) => {
         const axes = await dataView.axes()
         let data = []
         let xData = []
-
         /**
          * rowColors: get spotfire set colors
          */
@@ -104,9 +114,15 @@ Spotfire.initialize(async (mod) => {
         rows.forEach(row => {
             data.push(axes.map(axis => {
                 if (axis.isCategorical) {
-                    return row.categorical(axis.name).formattedValue()
+                    return {
+                        axisName: axis.name,
+                        value: row.categorical(axis.name).formattedValue()
+                    }
                 }
-                return row.continuous(axis.name).value()
+                return {
+                    axisName: axis.name,
+                    value: row.continuous(axis.name).value()
+                }
             }));
         });
 
@@ -122,14 +138,25 @@ Spotfire.initialize(async (mod) => {
             return arr
         }
 
+        let yMap = {}
         data.forEach(item => {
-            if (!obj[item[0]]) {
-                obj[item[0]] = []
-                obj[item[0]].push(item[item.length - 1])
-            } else {
-                obj[item[0]].push(item[item.length - 1])
-            }
+            if (!obj[item[0].value]) {
+                obj[item[0].value] = []
+            } 
+            obj[item[0].value].push(item[1].value)
+
+            let tempArr = item.slice(2, item.length)
+            if(!tempArr || !tempArr.length) return;
+            tempArr.forEach(a => {
+                if(!yMap[a.axisName]){
+                    yMap[a.axisName] = []
+                }
+                yMap[a.axisName].push(a.value)
+            })
         })
+
+        // console.log(yMap)
+
 
         let res = []
 
@@ -245,7 +272,7 @@ Spotfire.initialize(async (mod) => {
             grid: {
                 left: '10%',
                 right: '10%',
-                bottom: '15%'
+                bottom: '20%'
             },
             xAxis: {
                 type: 'category',
@@ -260,6 +287,10 @@ Spotfire.initialize(async (mod) => {
                 axisLine: {
                     onZero: false,
                 },
+                axisLabel: {
+                    rotate: -90,
+                    overflow: 'breakAll'
+                },
                 data: xData
             },
             yAxis: {
@@ -270,8 +301,25 @@ Spotfire.initialize(async (mod) => {
                 axisLine: {
                     show: true,
                 },
+                axisLabel: {
+                    formatter: function(value, index){
+                        let arr = (value + '').split('.')
+                        if(arr.length > 1 && arr[1].length > 2){
+                            return Number(value.toFixed(2))
+                        }else{
+                            return value
+                        }
+                    }
+                },
                 splitLine: {
                     show: false,
+                },
+                min: function (value) {
+                    return Number(parseInt((Math.floor(value.min / 10 * 10) + '')));
+                    // return value.min;
+                },
+                max: function (value) {
+                    return value.max
                 }
 
             },
@@ -287,8 +335,10 @@ Spotfire.initialize(async (mod) => {
                 }
             ]
         };
+        
 
         formatLineObj(line.value())
+        formatControlLineObj()
 
         let colorStr = colorDomain.join(',')
         const textWidth = chartDom.clientWidth - 20
@@ -312,7 +362,7 @@ Spotfire.initialize(async (mod) => {
         option && myChart.setOption(option);
 
         /**
-         * format line chart
+         * format feature line chart
          */
         function formatLineObj(value) {
             let lineData = []
@@ -332,11 +382,55 @@ Spotfire.initialize(async (mod) => {
             let lineObj = {
                 type: 'line',
                 name: value,
+                label: {
+                    show: true,
+                    formatter: function(param){
+                        return param.value.toFixed(4)
+                    },
+                    backgroundColor: '#fff',
+                },
                 data: lineData
             }
 
             option.series.push(lineObj)
 
+        }
+
+
+        /**
+         * format set line chart
+         */
+         async function formatControlLineObj() {
+            if(yMap && Object.keys(yMap).length){
+                for(let key in yMap){
+                    let axis = await mod.visualization.axis(key)
+                    let lineObj = {
+                        type: 'line',
+                        name: key,
+                        lineStyle: {
+                            type: 'dashed'
+                        },
+                        label: {
+                            show: true,
+                            formatter: function(param){
+                                if(param.dataIndex === 0){
+                                    return `${axis.parts[0].displayName}: ${param.value.toFixed(4)}`
+                                }else{
+                                    return ''
+                                }
+                            },
+                            backgroundColor: '#fff',
+                        },
+                        symbolSize: 0,
+                        data: yMap[key]
+                    }
+            
+                    option.series.push(lineObj)
+                }
+            }
+
+            option && myChart.setOption(option);
+            
         }
         /**
          * A helper function to compare a property against a certain value
@@ -354,8 +448,7 @@ Spotfire.initialize(async (mod) => {
             section
         } = popout;
         const {
-            radioButton,
-            checkbox
+            radioButton
         } = popout.components;
 
         /**
@@ -454,8 +547,10 @@ Spotfire.initialize(async (mod) => {
             })
         })
 
-        myChart.getZr().on('click', function (e) {
+        myChart.getZr().on('click', async function (e) {
             if (!e.target) {
+                const isExpiredZr = await dataView.hasExpired()
+                if(isExpiredZr) return;
                 dataView.clearMarking();
             }
         })
